@@ -5,6 +5,7 @@
 #include "N4.h"
 #include "N48.h"
 #include "LeafArray.h"
+#include "InnerArray.h"
 #include <libpmemobj.h>
 #include <set>
 
@@ -12,8 +13,14 @@ namespace PART_ns {
 
 class Tree {
   public:
+
+    //change PXF
+    mutable  int MaxLevel;
+
+
   private:
     N *root;
+
 
     bool checkKey(const Key *ret, const Key *k) const;
 

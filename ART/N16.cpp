@@ -1,5 +1,6 @@
 #include "N16.h"
 #include "LeafArray.h"
+#include "InnerArray.h"
 #include "N.h"
 #include <algorithm>
 #include <assert.h>

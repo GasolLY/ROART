@@ -33,6 +33,8 @@ add_definitions(-DFIND_FIRST)
 
 #add_definitions(-DZENTRY)
 
+add_definitions(-DINNER_ARRAY)
+
 #malloc
 #add_definitions(-DPMALLOC)
 #add_definitions(-DTXPMALLOC)

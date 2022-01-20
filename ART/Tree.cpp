@@ -51,13 +51,13 @@ void *allocate_size(size_t size) {
 
 Tree::Tree() {
     std::cout << "[P-ART]\tnew P-ART\n";
-
+    MaxLevel=0;
     init_nvm_mgr();
     register_threadinfo();
     NVMMgr *mgr = get_nvm_mgr();
     //    Epoch_Mgr * epoch_mgr = new Epoch_Mgr();
 #ifdef ARTPMDK
-    const char *pool_name = "/mnt/pmem0/matianmao/dlartpmdk.data";
+    const char *pool_name = "/mnt/pmem_pxf/dlartpmdk.data";
     const char *layout_name = "DLART";
     size_t pool_size = 64LL * 1024 * 1024 * 1024; // 16GB
 
@@ -81,6 +81,7 @@ Tree::Tree() {
 
     if (mgr->first_created) {
         // first open
+        //第一次打开，创建N256的 Root节点，并flush。root节点的level=0
         root = new (mgr->alloc_tree_root()) N256(0, {});
         flush_data((void *)root, sizeof(N256));
         //        N::clflush((char *)root, sizeof(N256), true, true);
@@ -107,6 +108,9 @@ Tree::~Tree() {
     // TODO: reclaim the memory of PM
     //    N::deleteChildren(root);
     //    N::deleteNode(root);
+
+    std::cout << "[DEBUG]\tThe Max Level is:"<<MaxLevel<<"\n";
+
     std::cout << "[P-ART]\tshut down, free the tree\n";
     unregister_threadinfo();
     close_nvm_mgr();
@@ -145,9 +149,11 @@ restart:
     need_restart = false;
     N *node = root;
 
+    
     uint32_t level = 0;
     bool optimisticPrefixMatch = false;
 
+    //逐层向下查询。判断是否Match以及判断是否是LeafArray
     while (true) {
 #ifdef INSTANT_RESTART
         node->check_generation();
@@ -156,6 +162,7 @@ restart:
 #ifdef CHECK_COUNT
         int pre = level;
 #endif
+        //先查找前缀
         switch (checkPrefix(node, k, level)) { // increases level
         case CheckPrefixResult::NoMatch:
             return nullptr;
@@ -176,6 +183,26 @@ restart:
                 return nullptr;
             }
 
+#ifdef INNER_ARRAY
+            //若子节点是InnerArray，则不能使用上述循环的方案。需要特殊处理
+            while(N::isInnerArray(node)){
+                uint32_t matchKeyLen = 0;
+
+                auto ia = N::getInnerArray(node);
+                node = ia->lookup(k,matchKeyLen);
+
+                if(node == nullptr && restart_cnt < 0){
+                    restart_cnt++;
+                    goto restart;
+                }
+                
+                level   +=  matchKeyLen;
+                if(level>MaxLevel){
+                    MaxLevel=level;
+                }
+            }
+#endif
+            //若子节点是LeafArray，则其下一级必定是叶节点
             if (N::isLeafArray(node)) {
 
                 auto la = N::getLeafArray(node);
@@ -190,11 +217,21 @@ restart:
                     restart_cnt++;
                     goto restart;
                 }
+                //change PXF
+                level++;    
+                if(level>MaxLevel){
+                    MaxLevel=level;
+                }
                 return ret;
             }
         }
         }
         level++;
+        
+        //change PXF
+        if(level>MaxLevel){
+            MaxLevel=level;
+        }
     }
 }
 #else
@@ -206,6 +243,7 @@ Leaf *Tree::lookup(const Key *k) const {
 
     uint32_t level = 0;
     bool optimisticPrefixMatch = false;
+    
 
     while (true) {
 #ifdef INSTANT_RESTART
@@ -252,6 +290,11 @@ Leaf *Tree::lookup(const Key *k) const {
         }
         }
         level++;
+        
+        //change PXF
+        if(level>MaxLevel){
+            this->MaxLevel=level;
+        }
     }
 }
 #endif
@@ -277,6 +320,7 @@ restart:
 #endif
         auto v = node->getVersion(); // check version
 
+        //逐层比较每个node的内容与需要寻找的Key
         switch (checkPrefix(node, k, level)) { // increases level
         case CheckPrefixResult::NoMatch:
             if (N::isObsolete(v) || !node->readVersionOrRestart(v)) {
@@ -291,8 +335,10 @@ restart:
             //     // but it next fkey is 0
             //     return OperationResults::NotFound;
             // }
+            
+            //若匹配：
             nodeKey = k->fkey[level];
-
+            //对于ART定义的N4、N14、N48、N256，根据单字节的Key切片，寻找next node
             nextNode = N::getChild(nodeKey, node);
 
             if (nextNode == nullptr) {
@@ -302,7 +348,36 @@ restart:
                 }
                 return OperationResults::NotFound;
             }
+#ifdef INNER_ARRAY
+            //若nextNode是InnerArray类型(需要注意的是，设计中InnerArray即使多层，也是连续的数层，因此可以通过while循环向下遍历)
+            while(N::isInnerArray(nextNode)){
+                //Can't unstand
+                node->lockVersionOrRestart(v, needRestart);
+                if(needRestart){
+                    goto restart;
+                }
+                
+                uint32_t matchKeyLen = 0;
+
+                auto ia = N::getInnerArray(nextNode);
+                node = nextNode;
+                nextNode = ia->lookup(k,matchKeyLen);
+
+                if(nextNode == nullptr){
+
+                    goto restart;
+                }
+                
+                level += matchKeyLen;
+                if(level>MaxLevel){
+                    MaxLevel=level;
+                }
+            }
+
+#endif
+
 #ifdef LEAF_ARRAY
+            //若childArray是LeafArray，则其子节点必为Leaf Node，因此直接处理即可
             if (N::isLeafArray(nextNode)) {
                 node->lockVersionOrRestart(v, needRestart);
                 if (needRestart) {
@@ -343,6 +418,11 @@ restart:
             }
 #endif
             level++;
+            
+            //change PXF
+            if(level>MaxLevel){
+                MaxLevel=level;
+            }
         }
         }
     }
@@ -351,6 +431,7 @@ restart:
 bool Tree::lookupRange(const Key *start, const Key *end, const Key *continueKey,
                        Leaf *result[], std::size_t resultSize,
                        std::size_t &resultsFound) const {
+    //判断start与end的Key的大小
     if (!N::key_key_lt(start, end)) {
         resultsFound = 0;
         return false;
@@ -550,6 +631,12 @@ restart:
                 nextNode = N::getChild(startLevel, node);
 
                 level++;
+
+                //change PXF
+                if(level>MaxLevel){
+                    MaxLevel=level;
+                }
+
                 continue;
             }
             break;
@@ -767,6 +854,12 @@ restart:
                 nextNode = N::getChild(startLevel, node);
 
                 level++;
+
+                //change PXF
+                if(level>MaxLevel){
+                    MaxLevel=level;
+                }
+
                 continue;
             }
             break;
@@ -799,12 +892,15 @@ bool Tree::checkKey(const Key *ret, const Key *k) const {
 typename Tree::OperationResults Tree::insert(const Key *k) {
     EpochGuard NewEpoch;
 
+    static long long int insertCounter=0;
+
 restart:
     bool needRestart = false;
     N *node = nullptr;
     N *nextNode = root;
     N *parentNode = nullptr;
     uint8_t parentKey, nodeKey = 0;
+    //初始化level=0
     uint32_t level = 0;
 
     while (true) {
@@ -814,20 +910,24 @@ restart:
 #ifdef INSTANT_RESTART
         node->check_generation();
 #endif
-        auto v = node->getVersion();
+        //Debug Segmentation Fault
+        //auto v = node->getVersion();
 
         uint32_t nextLevel = level;
 
         uint8_t nonMatchingKey;
         Prefix remainingPrefix;
         switch (
+            //前缀悲观判定法
             checkPrefixPessimistic(node, k, nextLevel, nonMatchingKey,
                                    remainingPrefix)) { // increases nextLevel
         case CheckPrefixPessimisticResult::SkippedLevel:
             goto restart;
         case CheckPrefixPessimisticResult::NoMatch: {
+            //避免插入现有key的subkey
             assert(nextLevel < k->getKeyLen()); // prevent duplicate key
-            node->lockVersionOrRestart(v, needRestart);
+            //Debug Segmentation Fault
+            //node->lockVersionOrRestart(v, needRestart);
             if (needRestart)
                 goto restart;
 
@@ -848,6 +948,7 @@ restart:
             auto *newLeaf = allocLeaf(k);
 
 #ifdef LEAF_ARRAY
+            //如果NoMatch，则创建新的LeafArray，并插入LeafNode
             auto newLeafArray =
                 new (alloc_new_node_from_type(NTypes::LeafArray)) LeafArray();
             newLeafArray->insert(newLeaf, true);
@@ -885,6 +986,8 @@ restart:
             //            std::cout<<"insert success\n";
 
             node->writeUnlock();
+
+            insertCounter++;
             return OperationResults::Success;
 
         } // end case  NoMatch
@@ -895,65 +998,179 @@ restart:
         // TODO: maybe one string is substring of another, so it fkey[level]
         // will be 0 solve problem of substring
 
+
+        //若前缀Match：
         level = nextLevel;
         nodeKey = k->fkey[level];
 
         nextNode = N::getChild(nodeKey, node);
 
-        if (nextNode == nullptr) {
-            node->lockVersionOrRestart(v, needRestart);
-            if (needRestart)
+#ifdef INNER_ARRAY
+        //若nextNode为InnerArray，则需要单独的处理逻辑.
+        //退出循环时，nextnode为nullptr或者nextnode不是InnerArray类型
+        while(nextNode!=nullptr && N::isInnerArray(nextNode)){
+            //Can't unstand
+            //Debug Segmentation Fault
+            //node->lockVersionOrRestart(v, needRestart);
+            if(needRestart){
                 goto restart;
-            Leaf *newLeaf = allocLeaf(k);
-#ifdef LEAF_ARRAY
-            auto newLeafArray =
-                new (alloc_new_node_from_type(NTypes::LeafArray)) LeafArray();
-            newLeafArray->insert(newLeaf, true);
-            N::insertAndUnlock(node, parentNode, parentKey, nodeKey,
-                               N::setLeafArray(newLeafArray), needRestart);
-#else
-            N::insertAndUnlock(node, parentNode, parentKey, nodeKey,
-                               N::setLeaf(newLeaf), needRestart);
-#endif
-            if (needRestart)
-                goto restart;
+            }
 
-            return OperationResults::Success;
+            uint32_t matchKeyLen = 0;
+                
+            auto ia = N::getInnerArray(nextNode);
+            node = nextNode;
+            nextNode = ia->lookup(k,matchKeyLen);
+
+
+            level       +=  matchKeyLen;
+            nextLevel   +=  matchKeyLen;
+            if(level>MaxLevel){
+                MaxLevel=level;
+            }
+            
+
+            if(nextNode == nullptr){
+                break;
+            }
+
         }
+
+#endif
+
+        if (nextNode == nullptr) {
+            //若node为InnerArray,且nextnode为nullptr，则说明：新插入的key与该层InnerArray有公共前缀，但是后面的Key切片与现有的Key不同。
+            //因此，此时需要在该InnerArray中插入一个连接LeafNode的LeafArray
+
+            //Question 0 ：问题是，此时在InnerArray中存储的Key切片的比重是1位or？
+#ifdef INNER_ARRAY
+            if(node->getType() == NTypes::InnerArray){
+                //Debug Segmentation Fault
+                //node->lockVersionOrRestart(v, needRestart);
+                if (needRestart)
+                    goto restart;
+
+                //为Key分配叶节点空间
+                Leaf *newLeaf = allocLeaf(k);
+
+                //分配LeafArray的空间
+                auto newLeafArray =
+                    new (alloc_new_node_from_type(NTypes::LeafArray)) LeafArray();
+                //插入新分配的叶节点至LeafArray中，true表示flush flag为true
+                newLeafArray->insert(newLeaf, true);
+
+
+                //将LeafArray的地址存入InnerArray的子节点数组中
+                //Question : keySliceLen的值需要思考如何更好的确定
+                int keySliceLen  = k->key_len - level;
+                uint16_t tmpFinger = 0;
+                //计算特征值。若Key.h中getFingerPrint()函数的实现有所更改，该部分也需要更改。
+                for (int i = 0; i < keySliceLen; i++) {
+                    tmpFinger = tmpFinger * 131 + k->fkey[level+i];
+                }
+                //参数分别为 key切片长度、key切片内容、特征值、子节点指针、是否刷新
+                char tmpCharArr[k->key_len];
+                memcpy(tmpCharArr,k->fkey,k->key_len);
+                //N::getInnerArray(node)->insert(keySliceLen ,reinterpret_cast<uint8_t*>(&k->fkey[level]) ,tmpFinger ,N::setLeafArray(newLeafArray), true);
+                N::getInnerArray(node)->insert(keySliceLen ,tmpCharArr ,tmpFinger ,N::setLeafArray(newLeafArray), true);
+
+
+                flush_data(newLeafArray, sizeof(LeafArray));
+
+                if (needRestart)
+                    goto restart;
+
+                insertCounter++;
+                return OperationResults::Success;    
+            }
+#endif
+
+
+            //如果Node为普通的N4、N16、N48、N256类型，且nextnode为nullptr，即 无可插入的LeafArray，则生成一个新的LeafArray
+            if(true){
+                //Debug Segmentation Fault
+                //node->lockVersionOrRestart(v, needRestart);
+                if (needRestart)
+                    goto restart;
+                //为Key分配叶节点空间
+                Leaf *newLeaf = allocLeaf(k);
 #ifdef LEAF_ARRAY
+                //分配LeafArray的空间
+                auto newLeafArray =
+                    new (alloc_new_node_from_type(NTypes::LeafArray)) LeafArray();
+                //插入新分配的叶节点至LeafArray中，true表示flush flag为true
+                newLeafArray->insert(newLeaf, true);
+                //将LeafArray的地址存入node的子节点数组中
+                N::insertAndUnlock(node, parentNode, parentKey, nodeKey,
+                                N::setLeafArray(newLeafArray), needRestart);
+#else
+                N::insertAndUnlock(node, parentNode, parentKey, nodeKey,
+                                N::setLeaf(newLeaf), needRestart);
+#endif
+                if (needRestart)
+                    goto restart;
+
+                insertCounter++;
+                return OperationResults::Success;                
+            }
+
+
+        }
+
+#ifdef LEAF_ARRAY
+        //如果已有LeafArray，则插入至已有的LeafArray中
         if (N::isLeafArray(nextNode)) {
             auto leaf_array = N::getLeafArray(nextNode);
             if (leaf_array->lookup(k) != nullptr) {
+                //已存在相同的key
+
+                insertCounter++;
                 return OperationResults::Existed;
             } else {
-                auto lav = leaf_array->getVersion();
-                leaf_array->lockVersionOrRestart(lav, needRestart);
+                //Debug Segmentation Fault
+                //auto lav = leaf_array->getVersion();
+                //Debug Segmentation Fault
+                //leaf_array->lockVersionOrRestart(lav, needRestart);
                 if (needRestart) {
                     goto restart;
                 }
+                //若已有的LeafArray已满，则进行分裂操作
+                //需要添加关于Inner_Array的操作。例如分裂后新生成一个InnerArray。例如若InnerArray已满，需要分裂。例如，修改node的指向，再次从上层向下遍历。
                 if (leaf_array->isFull()) {
                     leaf_array->splitAndUnlock(node, nodeKey, needRestart);
                     if (needRestart) {
                         goto restart;
                     }
+                    
+                    //分裂后，将nextNode重新置为node的子节点（向上回溯）。再继续向下查询并insert（此时LeafArray必定未满，可直接insert）
                     nextNode = N::getChild(nodeKey, node);
                     // insert at the next iteration
                 } else {
+                    //若LeafArray未满，则直接插入即可
                     auto leaf = allocLeaf(k);
                     leaf_array->insert(leaf, true);
                     leaf_array->writeUnlock();
+
+                    insertCounter++;
                     return OperationResults::Success;
                 }
             }
         }
 #else
         if (N::isLeaf(nextNode)) {
-            node->lockVersionOrRestart(v, needRestart);
+            //Debug Segmentation Fault
+            //node->lockVersionOrRestart(v, needRestart);
             if (needRestart)
                 goto restart;
             Leaf *leaf = N::getLeaf(nextNode);
 
             level++;
+
+            //change PXF
+            if(level>MaxLevel){
+                MaxLevel=level;
+            }
+
             // assert(level < leaf->getKeyLen());
             // prevent inserting when
             // prefix of leaf exists already
@@ -1009,7 +1226,14 @@ restart:
             return OperationResults::Success;
         }
 #endif
+        //查询时，若match，且未到LeafArray，则level依次递增
         level++;
+
+        //change PXF
+        if(level>MaxLevel){
+            MaxLevel=level;
+        }
+        
     }
     //    std::cout<<"ohfinish\n";
 }
@@ -1060,6 +1284,36 @@ restart:
                 }
                 return OperationResults::NotFound;
             }
+
+#ifdef INNER_ARRAY
+            while(N::isInnerArray(nextNode)){
+                //Can't unstand
+                //Debug Segmentation Fault
+                //node->lockVersionOrRestart(v, needRestart);
+                if(needRestart){
+                    goto restart;
+                }
+                
+                uint32_t matchKeyLen = 0;
+                
+                auto ia = N::getInnerArray(nextNode);
+                node = nextNode;
+                nextNode = ia->lookup(k,matchKeyLen);
+
+                if(nextNode == nullptr){
+
+                    goto restart;
+                }
+
+                level  +=  matchKeyLen;
+
+                if(level>MaxLevel){
+                    MaxLevel=level;
+                }
+            }
+
+#endif
+
 #ifdef LEAF_ARRAY
             if (N::isLeafArray(nextNode)) {
                 auto *leaf_array = N::getLeafArray(nextNode);
@@ -1149,6 +1403,12 @@ restart:
             }
 #endif
             level++;
+
+            //change PXF
+            if(level>MaxLevel){
+                MaxLevel=level;
+            }
+
         }
         }
     }
@@ -1163,14 +1423,19 @@ void Tree::rebuild(std::vector<std::pair<uint64_t, size_t>> &rs,
 
 typename Tree::CheckPrefixResult Tree::checkPrefix(N *n, const Key *k,
                                                    uint32_t &level) {
+    //若需要查询的Key的长度 小于等于 节点的层数，则说明未匹配
     if (k->getKeyLen() <= n->getLevel()) {
         return CheckPrefixResult::NoMatch;
     }
     Prefix p = n->getPrefi();
+    //暂时未理解
     if (p.prefixCount + level < n->getLevel()) {
         level = n->getLevel();
         return CheckPrefixResult::OptimisticMatch;
     }
+    //若node存储了前缀prefix，则依次遍历前缀的每个字符，若有不匹配的则直接返回NoMatch
+    
+    //important point: 这一步感觉可以通过InnerCompaction的Finger值去替代掉。从而加快查询速率。
     if (p.prefixCount > 0) {
         for (uint32_t i = ((level + p.prefixCount) - n->getLevel());
              i < std::min(p.prefixCount, maxStoredPrefixLength); ++i) {
@@ -1185,9 +1450,15 @@ typename Tree::CheckPrefixResult Tree::checkPrefix(N *n, const Key *k,
             return CheckPrefixResult::OptimisticMatch;
         }
     }
+    //返回匹配
     return CheckPrefixResult::Match;
 }
 
+/**
+ * 前缀悲观判定法
+ * 
+ * 即依次比较每一个前缀。其中level随着对前缀的每一个字节进行比较，不断增加。即，level表示key slice是key的第level个字节
+ * */
 typename Tree::CheckPrefixPessimisticResult
 Tree::checkPrefixPessimistic(N *n, const Key *k, uint32_t &level,
                              uint8_t &nonMatchingKey,
@@ -1198,8 +1469,10 @@ Tree::checkPrefixPessimistic(N *n, const Key *k, uint32_t &level,
         // "splitAndUnlock" or "merge" is detected Inconsistent path compressed
         // prefix should be recovered in here
         bool needRecover = false;
-        auto v = n->getVersion();
-        n->lockVersionOrRestart(v, needRecover);
+        //Debug Segmentation Fault
+        //auto v = n->getVersion();
+        //Debug Segmentation Fault
+        //n->lockVersionOrRestart(v, needRecover);
         if (!needRecover) {
             // Inconsistent state due to prior system crash is suspected --> Do
             // recovery
@@ -1286,6 +1559,7 @@ Tree::checkPrefixCompare(const N *n, const Key *k, uint32_t &level) {
     if (p.prefixCount + level < n->getLevel()) {
         return PCCompareResults::SkippedLevel;
     }
+    //如果节点n中存储了前缀的话，则进行前缀比较
     if (p.prefixCount > 0) {
         Leaf *kt = nullptr;
         bool load_flag = false;

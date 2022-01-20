@@ -196,6 +196,11 @@ void LeafArray::splitAndUnlock(N *parentNode, uint8_t parentKey,
     std::vector<char> common_prefix;
     int level = 0;
     level = parentNode->getLevel() + 1;
+
+#ifdef INNER_ARRAY
+    int comPrefixLen = 0;
+
+#endif
     // assume keys are not substring of another key
 
     // todo: get common prefix can be optimized by binary search
@@ -206,6 +211,8 @@ void LeafArray::splitAndUnlock(N *parentNode, uint8_t parentKey,
                 if (i == 0) {
                     common_prefix.push_back(keys[i][level]);
                 } else {
+                    //keys存储该LeafArray内的所有的key
+                    //common_prefix存储最长的公共前缀
                     if (keys[i][level] != common_prefix.back()) {
 
                         common_prefix.pop_back();
@@ -222,6 +229,10 @@ void LeafArray::splitAndUnlock(N *parentNode, uint8_t parentKey,
         if (out)
             break;
         level++;
+
+#ifdef INNER_ARRAY
+        comPrefixLen++;
+#endif
     }
     std::map<char, LeafArray *> split_array;
     for (i = 0; i < leaf_count; i++) {
@@ -230,6 +241,7 @@ void LeafArray::splitAndUnlock(N *parentNode, uint8_t parentKey,
                 new (alloc_new_node_from_type(NTypes::LeafArray))
                     LeafArray(level);
         }
+        //根据第Level位，即不同的第一个位，插入Leaf Node去对应的Leaf Array
         split_array.at(keys[i][level])->insert(getLeafAt(i), false);
     }
 
@@ -237,6 +249,38 @@ void LeafArray::splitAndUnlock(N *parentNode, uint8_t parentKey,
     uint8_t *prefix_start = reinterpret_cast<uint8_t *>(common_prefix.data());
     auto prefix_len = common_prefix.size();
     auto leaf_array_count = split_array.size();
+#ifdef INNER_ARRAY
+    //important point
+    //关键点在于：LeafArray进行叶节点分裂的时候，如何操作，才能尽量发挥InnerArray的将多层（多字节的）key压缩为一个Finger的优势。
+    
+    //生成一个InnerArray存储前缀
+    n = new (alloc_new_node_from_type(NTypes::InnerArray))
+            InnerArray(parentNode->getLevel() + 1);
+    
+    //fkey 用于暂存各个前缀
+    //uint8_t * fkey = (uint8_t *)malloc(comPrefixLen+1);
+    char * fkey = (char *)malloc(comPrefixLen+1);
+    memcpy(fkey, keys[0], comPrefixLen);
+    uint16_t tmpFinger = 0;
+
+    //目前的做法是，计算 公共前缀 加上 第一个不同的位的 Hash特征值
+    for (const auto &p : split_array) {
+        fkey[comPrefixLen] = p.first;
+        //计算特征值。若Key.h中getFingerPrint()函数的实现有所更改，该部分也需要更改。
+        tmpFinger = 0;
+        for (int i = 0; i < comPrefixLen+1; i++) {
+            tmpFinger = tmpFinger * 131 + fkey[n->getLevel()+i];
+        }
+        //参数分别为 key切片长度、key切片内容、特征值、子节点指针、是否刷新
+        getInnerArray(n)->insert(comPrefixLen+1 ,fkey ,tmpFinger ,setLeafArray(p.second), true);
+
+        flush_data(p.second, sizeof(LeafArray));
+    }
+    //让父节点指向新生成的InnerArray
+    N::change(parentNode, parentKey, n);
+
+#else
+    //为分裂后的LeafArray，生成父节点。并将公共前缀存储在父节点n的prefix结构中
     if (leaf_array_count <= 4) {
         n = new (alloc_new_node_from_type(NTypes::N4))
             N4(level, prefix_start, prefix_len);
@@ -252,12 +296,17 @@ void LeafArray::splitAndUnlock(N *parentNode, uint8_t parentKey,
     } else {
         assert(0);
     }
+
     for (const auto &p : split_array) {
         unchecked_insert(n, p.first, setLeafArray(p.second), true);
         flush_data(p.second, sizeof(LeafArray));
     }
-
     N::change(parentNode, parentKey, n);
+    
+#endif
+
+
+
     parentNode->writeUnlock();
 
     this->writeUnlockObsolete();

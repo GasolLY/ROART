@@ -7,7 +7,7 @@
 
 const int max_thread_num = 36;
 
-inline const char *nvm_dir = "/mnt/pmem0/jzc/";
+inline const char *nvm_dir = "/mnt/pmem_pxf/";
 
 enum IndexType { PART, FAST_FAIR, SKIPLIST, _IndexTypeNumber };
 
@@ -109,15 +109,34 @@ static void usage_exit(FILE *out) {
 static void parse_arguments(int argc, char *argv[], Config &state) {
     // Default Values
     state.type = PART;
-    state.num_threads = 4;
+    //state.type = FAST_FAIR;
+    //state.type = SKIPLIST;
+    //state.num_threads = 4;
+    state.num_threads = 1;
     state.key_type = String;
     state.email = 0;
-    state.init_keys = 20000000;
+    //state.init_keys = 20000000;
+    state.init_keys =   20000000;
     state.time = 5;
     state.val_length = 8;
+    //state.val_length = 128;
     state.share_memory = true;
     state.duration = 1;
-    state.benchmark = SCAN_BENCH;
+
+    state.benchmark = READ_ONLY,
+    //state.benchmark = INSERT_ONLY;
+    //state.benchmark = UPDATE_ONLY;
+    //state.benchmark = DELETE_ONLY;
+    //state.benchmark = MIXED_BENCH;
+    //state.benchmark = SCAN_BENCH;
+    //state.benchmark = YCSB_A;
+    //state.benchmark = YCSB_B;
+    //state.benchmark = YCSB_C;
+    //state.benchmark = YCSB_D;
+    //state.benchmark = YCSB_E;
+    //state.benchmark = SCAN_BENCH;
+    //state.benchmark = RECOVERY_BENCH;
+    
     state.workload = RANDOM;
     state.skewness = 0.99;
     state.scan_length = 100;

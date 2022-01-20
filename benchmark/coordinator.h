@@ -24,6 +24,7 @@
 #include <string>
 #include <thread>
 #include <unistd.h>
+#include <iostream>
 
 using namespace NVMMgr_ns;
 
@@ -834,7 +835,8 @@ template <typename K, typename V, int size> class Coordinator {
             memset(value, 'a', val_len);
             value[val_len] = 0;
 
-            for (unsigned long i = 0; i < conf.init_keys; i++) {
+            //for (unsigned long i = 0; i < conf.init_keys; i++) {
+            for (long long i = 0; i < conf.init_keys; i++) {
                 if (conf.key_type == Integer) {
                     long long kk = benchmark->nextInitIntKey();
                     //                    std::string s = std::to_string(kk);
@@ -846,6 +848,7 @@ template <typename K, typename V, int size> class Coordinator {
                     std::string s = benchmark->nextInitStrKey();
                     k->Init((char *)s.c_str(), s.size(), value, val_len);
                     art->insert(k);
+                    std::cout<<"初始化第"<<i<<"个键值对"<<std::endl;
                 }
             }
             printf("init insert finished\n");

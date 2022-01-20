@@ -62,6 +62,8 @@ size_t get_node_size(PART_ns::NTypes type) {
         return sizeof(PART_ns::Leaf);
     case PART_ns::NTypes::LeafArray:
         return sizeof(PART_ns::LeafArray);
+    case PART_ns::NTypes::InnerArray:
+        return sizeof(PART_ns::InnerArray);
     default:
         std::cout << "[ALLOC NODE]\twrong type\n";
         assert(0);

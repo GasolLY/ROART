@@ -18,7 +18,8 @@ class LeafArray : public N {
   public:
     std::atomic<uintptr_t> leaf[LeafArrayLength];
     std::atomic<std::bitset<LeafArrayLength>>
-        bitmap; // 0 means used slot; 1 means empty slot
+        bitmap; // 0 means used slot; 1 means empty slot???
+        //看代码，感觉0代表未使用，1代表已使用
 
   public:
     LeafArray(uint32_t level = -1) : N(NTypes::LeafArray, level, {}, 0) {

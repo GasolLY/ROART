@@ -206,6 +206,11 @@ void N::check_generation() {
                 n->reload();
                 break;
             }
+            case NTypes::InnerArray: {
+                auto n = static_cast<InnerArray *>(this);
+                n->reload();
+                break;
+            }
             default: {
                 std::cout << "[Recovery]\twrong type " << (int)type << "\n";
                 assert(0);
@@ -295,6 +300,10 @@ N *N::getAnyChild(N *node) {
     }
     case NTypes::LeafArray: {
         auto n = static_cast<const LeafArray *>(node);
+        return n->getAnyChild();
+    }
+    case NTypes::InnerArray: {
+        auto n = static_cast<const InnerArray *>(node);
         return n->getAnyChild();
     }
     default: {
@@ -638,6 +647,10 @@ uint32_t N::getCount(N *node) {
         auto n = static_cast<const LeafArray *>(node);
         return n->getCount();
     }
+    case NTypes::InnerArray: {
+        auto n = static_cast<const InnerArray *>(node);
+        return n->getCount();
+    }
     default: {
         return 0;
     }
@@ -693,7 +706,8 @@ Leaf *N::getLeaf(const N *n) {
 }
 
 bool N::isLeafArray(const N *n) {
-    return (reinterpret_cast<uintptr_t>(n) & (1ULL << 0)) == 1;
+    //return (reinterpret_cast<uintptr_t>(n) & (1ULL << 0)) == 1;
+    return n->type==NTypes::LeafArray;
 }
 
 LeafArray *N::getLeafArray(const N *n) {
@@ -704,6 +718,20 @@ LeafArray *N::getLeafArray(const N *n) {
 N *N::setLeafArray(const LeafArray *la) {
     return reinterpret_cast<N *>(
         (reinterpret_cast<uintptr_t>(la) | (1ULL << 0)));
+}
+
+//Question 4
+bool N::isInnerArray(const N *n) {
+    //return (reinterpret_cast<uintptr_t>(n) & (1ULL << 0))==2;
+    return n->type==NTypes::InnerArray;
+}
+//Question 5
+N *N::setInnerArray(const InnerArray *ia) {
+    //return reinterpret_cast<N *>(ia);
+}
+//Question 6
+InnerArray *N::getInnerArray(const N *n) {
+    //return reinterpret_cast<InnerArray *>(n);
 }
 
 // only invoke this in remove and N4
@@ -760,6 +788,8 @@ void N::deleteNode(N *node) {
 
 // invoke in the insert
 // not all nodes are in the critical secton
+
+//在节点n的子节点中不断下沉寻找，直到找到某一个Leaf节点
 Leaf *N::getAnyChildTid(const N *n) {
     const N *nextNode = n;
 
@@ -929,7 +959,8 @@ void N::rebuild_node(N *node, std::vector<std::pair<uint64_t, size_t>> &rs,
         node->type_version_lock_obsolete = new std::atomic<uint64_t>;
         node->type_version_lock_obsolete->store(convertTypeToVersion(type));
         node->type_version_lock_obsolete->fetch_add(0b100);
-        node->old_pointer.store(0);
+        //change PXF
+        //node->old_pointer.store(0);
         //        rs.push_back(std::make_pair(0,0));
     }
 #endif
@@ -1000,6 +1031,8 @@ void N::unchecked_insert(N *node, uint8_t key_byte, N *child, bool flush) {
     }
 }
 
+//字符串大小比较
+//从compare_level位开始比较。优先比较字符大小，其次比较字符总长度。
 bool N::key_keylen_lt(char *a, const int alen, char *b, const int blen,
                       const int compare_level) {
     for (int i = compare_level; i < std::min(alen, blen); i++) {
