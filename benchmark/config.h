@@ -117,7 +117,8 @@ static void parse_arguments(int argc, char *argv[], Config &state) {
     state.val_length = 8;
     state.share_memory = true;
     state.duration = 1;
-    state.benchmark = SCAN_BENCH;
+    //state.benchmark = SCAN_BENCH;
+    state.benchmark = YCSB_B;
     state.workload = RANDOM;
     state.skewness = 0.99;
     state.scan_length = 100;

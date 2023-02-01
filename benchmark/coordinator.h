@@ -835,7 +835,7 @@ template <typename K, typename V, int size> class Coordinator {
             value[val_len] = 0;
             printf("init insert started\n");
             for (unsigned long i = 0; i < conf.init_keys; i++) {
-                printf("init insert the %d th data\n",i);
+                //printf("init insert the %d th data\n",i);
                 if (conf.key_type == Integer) {
                     long long kk = benchmark->nextInitIntKey();
                     //                    std::string s = std::to_string(kk);

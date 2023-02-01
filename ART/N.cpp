@@ -137,18 +137,18 @@ void N::check_generation() {
     //        generation_version++;
     //        return;
     //    }
-    printf("check_generation 1a1\n");
+    //printf("check_generation 1a1\n");
     uint64_t mgr_generation = get_threadlocal_generation();
 
     uint64_t zero = 0;
     uint64_t one = 1;
-    printf("check_generation 1a2\n");
+    //printf("check_generation 1a2\n");
     if (generation_version != mgr_generation) {
-        printf("check_generation 1a3\n");
+        //printf("check_generation 1a3\n");
         //        printf("start to recovery of this node %lld\n",
         //        (uint64_t)this);
         if (recovery_latch.compare_exchange_strong(zero, one)) {
-            printf("check_generation 1a4\n");
+            //printf("check_generation 1a4\n");
             //            printf("start to recovery of this node %lld\n",
             //            (uint64_t)this);
             type_version_lock_obsolete = new std::atomic<uint64_t>;
