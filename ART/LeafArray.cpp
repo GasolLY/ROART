@@ -63,7 +63,37 @@ Leaf *LeafArray::lookup(const Key *k) const {
 
     return nullptr;
 }
+// exist bugs.
+// bool LeafArray::insert(Leaf *l, bool flush) {
+//     auto b = bitmap.load();
+//     b.flip();
+//     auto pos = b._Find_first();
+//     if (pos < LeafArrayLength) {
+//         b.flip();
+//         b[pos] = true;
+//         bitmap.store(b);
+//         auto s =
+//             (static_cast<uintptr_t>(l->getFingerPrint()) << FingerPrintShift) |
+//             (reinterpret_cast<uintptr_t>(l));
+//         leaf[pos].store(s);
+//         if (flush)
+//             flush_data((void *)&leaf[pos], sizeof(std::atomic<uintptr_t>));
+
+//         return true;
+//     } else {
+//         return false;
+//     }
+// }
+
 bool LeafArray::insert(Leaf *l, bool flush) {
+    // first, need to judge whether exists
+    Key* lookupKey = new Key(); 
+    lookupKey->Init(l->GetKey(),l->getKeyLen(),l->GetValue(),l->val_len);
+    Leaf* result = lookup(lookupKey);
+    if(result!=nullptr){
+        return update(lookupKey,l);
+    }
+    //if dont exist data,then insert
     auto b = bitmap.load();
     b.flip();
     auto pos = b._Find_first();
@@ -83,6 +113,7 @@ bool LeafArray::insert(Leaf *l, bool flush) {
         return false;
     }
 }
+
 bool LeafArray::remove(const Key *k) {
     uint16_t finger_print = k->getFingerPrint();
     auto b = bitmap.load();

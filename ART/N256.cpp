@@ -17,6 +17,12 @@ void N256::deleteChildren() {
 }
 
 bool N256::insert(uint8_t key, N *val, bool flush) {
+    // first,need to check whether exists
+    N* res = getChild(key);
+    if(res!=nullptr){
+        change(key,val);
+    }
+    // if not exist,then insert
     if (flush) {
         uint64_t oldp = (1ull << 56) | ((uint64_t)key << 48);
     }

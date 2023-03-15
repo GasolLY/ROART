@@ -57,7 +57,7 @@ Tree::Tree() {
     NVMMgr *mgr = get_nvm_mgr();
     //    Epoch_Mgr * epoch_mgr = new Epoch_Mgr();
 #ifdef ARTPMDK
-    const char *pool_name = "/mnt/pmem0/matianmao/dlartpmdk.data";
+    const char *pool_name = "/mnt/pmem_pxf/dlartpmdk.data";
     const char *layout_name = "DLART";
     size_t pool_size = 64LL * 1024 * 1024 * 1024; // 16GB
 

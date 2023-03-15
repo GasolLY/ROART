@@ -7,6 +7,12 @@
 namespace PART_ns {
 
 bool N48::insert(uint8_t key, N *n, bool flush) {
+    // first,need to check whether exists
+    N* res = getChild(key);
+    if(res!=nullptr){
+        change(key,n);
+    }
+    // if not exist,then insert
     if (compactCount == 48) {
         return false;
     }

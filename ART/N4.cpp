@@ -21,6 +21,12 @@ void N4::deleteChildren() {
 }
 
 bool N4::insert(uint8_t key, N *n, bool flush) {
+    // first,need to check whether exists
+    N* res = getChild(key);
+    if(res!=nullptr){
+        change(key,n);
+    }
+    // if not exist,then insert
     if (compactCount == 4) {
         return false;
     }
