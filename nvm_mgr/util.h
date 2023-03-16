@@ -28,7 +28,7 @@ static __always_inline uint64_t rdtsc() {
     return ((uint64_t)hi << 32) | lo;
 }
 
-#define CPU_FREQUENCY 2.2 // 2.2 GHZ
+#define CPU_FREQUENCY 2.1 // 2.2 GHZ
 
 #define PM_FENCE()                                                             \
     do {                                                                       \

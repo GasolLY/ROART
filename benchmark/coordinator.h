@@ -147,6 +147,10 @@ template <typename K, typename V, int size> class Coordinator {
         PART_ns::Key *continueKey;
         PART_ns::Leaf *scan_result[505];
 
+        PART_ns::Leaf *resLeaf;
+        PART_ns::Key *resKey=new PART_ns::Key();
+        size_t resKeyLen;
+
         // variable value
         const int val_len = conf.val_length;
         char value[val_len + 5];
@@ -245,6 +249,11 @@ template <typename K, typename V, int size> class Coordinator {
                 //                    memcpy(scan_value, scan_result[i]->value,
                 //                    100);
                 //                }
+                break;
+            }
+            case READMODIFYWRITE: {
+                resLeaf = art->lookup(k);
+                art->update(k);
                 break;
             }
             default: {
@@ -466,6 +475,18 @@ template <typename K, typename V, int size> class Coordinator {
                 //                std::cout<<"find "<<resultFound<<"\n";
                 break;
             }
+            case READMODIFYWRITE: {
+                char* res;
+                if (conf.key_type == Integer) {
+                    res = bt->btree_search(d);
+                } else if (conf.key_type == String) {
+                    res = bt->btree_search((char *)s.c_str());
+                }
+
+                bt->btree_update((char *)s.c_str(),value);
+
+                break;
+            }
             default: {
                 printf("not support such operation: %d\n", op);
                 exit(-1);
@@ -632,6 +653,21 @@ template <typename K, typename V, int size> class Coordinator {
                 //                std::cout<<resultFound<<"\n";
                 break;
             }
+            case READMODIFYWRITE: {
+#ifdef VARIABLE_LENGTH
+                skiplist::skiplist_find(sl, (char *)s.c_str());
+#else
+                skiplist::skiplist_find(sl, d);
+#endif
+#ifdef VARIABLE_LENGTH
+                skiplist::skiplist_insert(sl, (char *)s.c_str(), value);
+//                skiplist::skiplist_remove(sl, (char *)s.c_str());
+#else
+                skiplist::skiplist_update(sl, d, d);
+//                skiplist::skiplist_remove(sl, d);
+#endif
+                break;
+            }
             default: {
                 printf("not support such operation: %d\n", op);
                 exit(-1);
@@ -684,6 +720,10 @@ template <typename K, typename V, int size> class Coordinator {
         char value[val_len + 5];
         memset(value, 'a', val_len);
         value[val_len] = 0;
+
+        PART_ns::Leaf *resLeaf;
+        PART_ns::Key *resKey=new PART_ns::Key();
+        size_t resKeyLen;
 
         int xcount = 0;
         cpuCycleTimer t;
@@ -738,6 +778,11 @@ template <typename K, typename V, int size> class Coordinator {
                 break;
             }
             case SCAN: {
+                break;
+            }
+            case READMODIFYWRITE: {
+                resLeaf = art->lookup(k);
+                art->update(k);
                 break;
             }
             default: {

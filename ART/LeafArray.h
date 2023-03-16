@@ -59,7 +59,6 @@ class LeafArray : public N {
     std::vector<Leaf *> getSortedLeaf(const Key *start, const Key *end,
                                       int start_level, bool compare_start,
                                       bool compare_end);
-
     void graphviz_debug(std::ofstream &f);
 
 } __attribute__((aligned(64)));

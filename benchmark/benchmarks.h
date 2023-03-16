@@ -17,15 +17,22 @@ static Benchmark *getBenchmark(Config conf) {
     case MIXED_BENCH:
         return new MixedBench(conf);
     case YCSB_A:
-        return new YSCBA(conf);
+        //return new YSCBA(conf);
+        return new YCSBA(conf);
     case YCSB_B:
-        return new YSCBB(conf);
+        //return new YSCBB(conf);
+        return new YCSBB(conf);
     case YCSB_C:
-        return new YSCBC(conf);
+        //return new YSCBC(conf);
+        return new YCSBC(conf);
     case YCSB_D:
-        return new YSCBD(conf);
+        //return new YSCBD(conf);
+        return new YCSBD(conf);
     case YCSB_E:
-        return new YSCBE(conf);
+        //return new YSCBE(conf);
+        return new YCSBE(conf);
+    case YCSB_F:
+        return new YCSBF(conf);
     case SCAN_BENCH:
         return new ScanBench(conf);
     case RECOVERY_BENCH:

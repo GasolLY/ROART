@@ -27,6 +27,7 @@ enum BenchMarkType {
     YCSB_C,
     YCSB_D,
     YCSB_E,
+    YCSB_F,
 
     SCAN_BENCH,
     RECOVERY_BENCH,
@@ -108,8 +109,8 @@ static void usage_exit(FILE *out) {
 
 static void parse_arguments(int argc, char *argv[], Config &state) {
     // Default Values
-    // state.type = PART;
-    state.type = FAST_FAIR;
+    state.type = PART;
+    // state.type = FAST_FAIR;
     state.num_threads = 4;
     state.key_type = String;
     state.email = 0;
@@ -118,7 +119,7 @@ static void parse_arguments(int argc, char *argv[], Config &state) {
     state.val_length = 8;
     state.share_memory = true;
     state.duration = 20;
-    state.benchmark = SCAN_BENCH;
+    state.benchmark = YCSB_F;
     state.workload = RANDOM;
     state.skewness = 0.99;
     state.scan_length = 100;

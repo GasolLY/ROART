@@ -301,6 +301,7 @@ Leaf *LeafArray::getLeafAt(size_t pos) const {
 }
 uint32_t LeafArray::getCount() const { return bitmap.load().count(); }
 bool LeafArray::isFull() const { return getCount() == LeafArrayLength; }
+
 std::vector<Leaf *> LeafArray::getSortedLeaf(const Key *start, const Key *end,
                                              int start_level,
                                              bool compare_start,
@@ -309,7 +310,15 @@ std::vector<Leaf *> LeafArray::getSortedLeaf(const Key *start, const Key *end,
     auto b = bitmap.load();
     auto i = b[0] ? 0 : 1;
 
+    if(getCount()==0){
+        return leaves;
+    }
+    int count=0;
+
     while (i < LeafArrayLength) {
+        if(count++ > LeafArrayLength){
+            return leaves;
+        }
         auto ptr = getLeafAt(i);
         i = b._Find_next(i);
         // start <= ptr < end

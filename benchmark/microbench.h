@@ -14,6 +14,7 @@ enum OperationType {
     GET,
     SCAN,
     MIXED,
+    READMODIFYWRITE,
     _OpreationTypeNumber
 };
 
@@ -369,10 +370,10 @@ class YSCBD : public Benchmark {
         long long next = workload->Next() % _conf.init_keys;
         std::string s = dataset->wl_str[next];
         if (k > read_ratio) {
-            char c = rdm.randomInt() % 94 + 33;
-            char d = rdm.randomInt() % 94 + 33;
-            s = d + s;
-            s = c + s;
+            // char c = rdm.randomInt() % 94 + 33;
+            // char d = rdm.randomInt() % 94 + 33;
+            // s = d + s;
+            // s = c + s;
             return std::make_pair(INSERT, s);
         } else {
             return std::make_pair(GET, s);
@@ -414,5 +415,196 @@ class YSCBE : public Benchmark {
         }
     }
 } __attribute__((aligned(64)));
+
+
+// 读50% 更新50%
+class YCSBA : public Benchmark {
+  public:
+    //	readRate = 0.5;
+    //	updateRate = 0.5;
+    int read_ratio = 50;
+
+    RandomGenerator rdm;
+
+    YCSBA(Config &conf) : Benchmark(conf) {}
+
+    virtual std::pair<OperationType, long long> nextIntOperation() {
+        int k = rdm.randomInt() % 100;
+        if (k > read_ratio) {
+            long long x = rdm.randomInt() % 128;
+            return std::make_pair(UPDATE,
+                                  x * (workload->Next() % _conf.init_keys));
+        } else {
+            return std::make_pair(GET, workload->Next() % _conf.init_keys);
+        }
+    }
+
+    virtual std::pair<OperationType, std::string> nextStrOperation() {
+        int k = rdm.randomInt() % 100;
+        long long next = workload->Next() % _conf.init_keys;
+        std::string s = dataset->wl_str[next];
+        if (k > read_ratio) {
+            return std::make_pair(UPDATE, s);
+        } else {
+            return std::make_pair(GET, s);
+        }
+    }
+} __attribute__((aligned(64)));
+
+// 读95% 更新5%
+class YCSBB : public Benchmark {
+  public:
+    //	readRate = 0.95;
+    //	updateRate = 0.05;
+    int read_ratio = 95;
+
+    RandomGenerator rdm;
+
+    YCSBB(Config &conf) : Benchmark(conf) {}
+
+    virtual std::pair<OperationType, long long> nextIntOperation() {
+        int k = rdm.randomInt() % 100;
+        if (k > read_ratio) {
+            long long x = rdm.randomInt() % 128;
+            return std::make_pair(UPDATE,
+                                  x * (workload->Next() % _conf.init_keys));
+        } else {
+            return std::make_pair(GET, workload->Next() % _conf.init_keys);
+        }
+    }
+
+    virtual std::pair<OperationType, std::string> nextStrOperation() {
+        int k = rdm.randomInt() % 100;
+        long long next = workload->Next() % _conf.init_keys;
+        std::string s = dataset->wl_str[next];
+        if (k > read_ratio) {
+            return std::make_pair(UPDATE, s);
+        } else {
+            return std::make_pair(GET, s);
+        }
+    }
+} __attribute__((aligned(64)));
+
+// 读100%
+class YCSBC : public Benchmark {
+  public:
+    //	readRate = 1.00;
+    int read_ratio = 100;
+
+    RandomGenerator rdm;
+
+    YCSBC(Config &conf) : Benchmark(conf) {}
+
+    virtual std::pair<OperationType, long long> nextIntOperation() {
+        return std::make_pair(GET, workload->Next() % _conf.init_keys);
+    }
+
+    virtual std::pair<OperationType, std::string> nextStrOperation() {
+        long long next = workload->Next() % _conf.init_keys;
+        std::string s = dataset->wl_str[next];
+        return std::make_pair(GET, s);
+    }
+} __attribute__((aligned(64)));
+
+// 读95% 插入5%
+class YCSBD : public Benchmark {
+  public:
+    //	readRate = 0.95;
+    //	insertRate = 0.05;
+    int read_ratio = 95;
+
+    RandomGenerator rdm;
+
+    YCSBD(Config &conf) : Benchmark(conf) {}
+
+    virtual std::pair<OperationType, long long> nextIntOperation() {
+        int k = rdm.randomInt() % 100;
+        if (k > read_ratio) {
+            long long x = rdm.randomInt() % 128;
+            return std::make_pair(INSERT,
+                                  x * (workload->Next() % _conf.init_keys));
+        } else {
+            return std::make_pair(GET, workload->Next() % _conf.init_keys);
+        }
+    }
+
+    virtual std::pair<OperationType, std::string> nextStrOperation() {
+        int k = rdm.randomInt() % 100;
+        long long next = workload->Next() % _conf.init_keys;
+        std::string s = dataset->wl_str[next];
+        if (k > read_ratio) {
+            return std::make_pair(INSERT, s);
+        } else {
+            return std::make_pair(GET, s);
+        }
+    }
+} __attribute__((aligned(64)));
+
+// 范围查询 95% 插入5%
+class YCSBE : public Benchmark {
+  public:
+    int scan_ratio = 95;
+    RandomGenerator rdm;
+
+    YCSBE(Config &conf) : Benchmark(conf) {}
+
+    virtual std::pair<OperationType, long long> nextIntOperation() {
+        int k = rdm.randomInt() % 100;
+        if (k < scan_ratio) {
+            return std::make_pair(SCAN, workload->Next() % _conf.init_keys);
+        } else {
+            int d = rdm.randomInt() % 128;
+            return std::make_pair(INSERT,
+                                  (workload->Next() % _conf.init_keys) * d);
+        }
+    }
+
+    virtual std::pair<OperationType, std::string> nextStrOperation() {
+        int k = rdm.randomInt() % 100;
+        long long next = workload->Next() % _conf.init_keys;
+        std::string s = dataset->wl_str[next];
+        if (k < scan_ratio) {
+            return std::make_pair(SCAN, s);
+        } else {
+            // char c = rdm.randomInt() % 94 + 33;
+            // char d = rdm.randomInt() % 94 + 33;
+            // s = d + s;
+            // s = c + s;
+            return std::make_pair(INSERT, s);
+        }
+    }
+} __attribute__((aligned(64)));
+
+// 读 50% ，读-改-写50%
+class YCSBF : public Benchmark {
+  public:
+    int read_ratio = 50;
+    RandomGenerator rdm;
+
+    YCSBF(Config &conf) : Benchmark(conf) {}
+
+    virtual std::pair<OperationType, long long> nextIntOperation() {
+        int k = rdm.randomInt() % 100;
+        if (k < read_ratio) {
+            return std::make_pair(READMODIFYWRITE, workload->Next() % _conf.init_keys);
+        } else {
+            int d = rdm.randomInt() % 128;
+            return std::make_pair(INSERT,
+                                  (workload->Next() % _conf.init_keys) * d);
+        }
+    }
+
+    virtual std::pair<OperationType, std::string> nextStrOperation() {
+        int k = rdm.randomInt() % 100;
+        long long next = workload->Next() % _conf.init_keys;
+        std::string s = dataset->wl_str[next];
+        if (k > read_ratio) {
+            return std::make_pair(READMODIFYWRITE, s);
+        } else {
+            return std::make_pair(GET, s);
+        }
+    }
+} __attribute__((aligned(64)));
+
 
 #endif
